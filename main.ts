@@ -8,8 +8,14 @@
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 // The program runs twice in the grader and both runs must write the same
 // bytes, so it writes nothing with a timestamp or a random value.
+//
+// The output directory itself is never removed: in the grader /output is a
+// mounted volume, and deleting a mount point throws EBUSY, which used to
+// fail the graded run with exit code 1. Only the directory's contents are
+// cleared, so a stale file can never survive from an earlier run and make
+// the two grader runs differ. The repository itself is never touched.
 
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildDossier } from "./vendor/makefun-frontend.ts";
@@ -19,10 +25,16 @@ const outDir = process.env.MAKEFUN_OUTPUT_DIR ?? "/output";
 const appDir = join(outDir, "app");
 const shotsDir = join(outDir, "screenshots");
 
-// Start from a clean output directory so a stale file can never survive
-// from an earlier run and make the two grader runs differ. The remove is
-// scoped to the output directory only; the repository itself is never touched.
-rmSync(outDir, { recursive: true, force: true });
+// Start from a clean output directory: clear every entry inside it, but
+// leave the directory itself standing — the grader mounts /output as a
+// volume, so removing the directory itself would throw EBUSY and fail the
+// run with exit code 1. Clearing contents is enough: nothing stale can
+// survive into the next run.
+if (existsSync(outDir)) {
+  for (const entry of readdirSync(outDir)) {
+    rmSync(join(outDir, entry), { recursive: true, force: true });
+  }
+}
 mkdirSync(appDir, { recursive: true });
 cpSync(join(repoRoot, "app"), appDir, { recursive: true });
 
